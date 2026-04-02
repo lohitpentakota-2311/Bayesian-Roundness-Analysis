@@ -87,7 +87,14 @@ The dataset must contain:
   - Prediction uncertainty 
   - Subset analysis for minimal models 
 
-### 4. Feature Selection & Minimal Models
+### 4. Gaussian Process Regression (matern32)
+- Outputs used for:
+  - Predictions
+  - RMSE 
+  - Hybrid Error  
+  - Prediction uncertainty 
+
+### 5. Feature Selection & Minimal Models
 
 #### Correlation Clustering
 - Features grouped using correlation threshold  
@@ -100,7 +107,7 @@ The dataset must contain:
 
 ---
 
-### 5. Ridge Regression
+### 6. Ridge Regression
 - Applied to selected features  
 - Lambda optimized via cross-validation  
 - Provides:
@@ -143,7 +150,7 @@ Standard error metric
 
 - Ensure `/utils` is in MATLAB path  
 - Hyperparameter tuning can be disabled by:
-  FlagforParamterIdentification = 0  
+  FlagforParamterIdentification = 'off'  (default='off')
 
 ---
 

@@ -19,7 +19,7 @@ if isfolder('utils')
     addpath(genpath('utils'));
 end
 % Global Settings
-FlagforParamterIdentification = 0; % Set to 1 to run hyperparameter optimization
+FlagforParamterIdentification = 'off'; % Set to 1 to run hyperparameter optimization
 epsilon = 2.8;                     % Threshold for hybrid error calculation
 %% 2. Load Dataset
 % Using relative pathing so it works on any machine
@@ -61,7 +61,7 @@ p = size(xTestNorm,2);
 fprintf('Running: Bayesian Lasso Model...\n');
 if isequal(FlagforParamterIdentification,'on')
     K=5;
-    bestlambda = findBestLambda(x, y, InittrainIdx, testIdx, ProcessParameters, K, seed);
+    bestlambda = findBestLambda(xTrain_Valid, yTrain_Valid, InittrainIdx, testIdx, ProcessParameters, K, seed);
 end
 % Define Bayesian Lasso prior
 PriorMdlLasso = bayeslm(p, 'ModelType', 'Lasso', 'VarNames', FeatureNames);
@@ -71,7 +71,8 @@ rng(seed);
 [EstMdlLasso, ~] = estimate(PriorMdlLasso, xTrain_ValidNorm, yTrain_Valid, ...
     'BurnIn', 5000, 'NumDraws', 35000);
 % Compute convergence metrics to check MCMC stability
-computeConvergence(EstMdlLasso);
+[SummaryTable, ~, ~, ~] =computeConvergence(EstMdlLasso);
+disp(SummaryTable);
 % Forecast predictions and covariance for train and test sets
 [yPredTrainLasso, YFCovTrainLasso] = forecast(EstMdlLasso, xTrain_ValidNorm);
 [ypredTestLasso, YFCovTestLasso]   = forecast(EstMdlLasso, xTestNorm);
@@ -193,11 +194,16 @@ legend([h(1), h(2)], {'Data', 'Normal'}, 'FontSize', 17, 'Location', 'best');
 title('Bayesian LASSO','FontSize', 16,'Interpreter', 'latex');
 set(gca, 'FontSize', 17, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 %% 5. Bayesian Conjugate Model (MixConjugate)
+tic;
 fprintf('Running: Bayesian Mix Conjugate SSVS Model...\n');
 % Hyperparameter optimization for V1, V2
 if isequal(FlagforParamterIdentification,'on')
-    [bestV1, bestV2] = findBestV1V2(x, y, InittrainIdx, ProcessParameters, logspace(-7, -2, 12), logspace(1, 1.7, 12), K, seed);
+    bestV1 =0; bestV2 = 0;
+    K=5;
+    [bestV1, bestV2] = findBestV1V2(xTrain_Valid, yTrain_Valid, InittrainIdx, ProcessParameters, logspace(-7, -2, 12), logspace(1, 1.5, 12), K, seed);
 end
+conjelapsedTime = toc;   % stop timer and get time (seconds)
+disp(conjelapsedTime)
 % Define prior model
 V = [bestV1*ones(p+1,1), bestV2*ones(p+1,1)];
 PriorMdl = bayeslm(p,'ModelType','MixConjugate','V',V,'VarNames',FeatureNames);
@@ -207,7 +213,8 @@ rng(seed);
 [EstMdl, summary] = estimate(PriorMdl, xTrain_ValidNorm, yTrain_Valid, ...
     'Display',false,'BurnIn',5000,'NumDraws',50000);
 % Convergence diagnostics
-computeConvergence(EstMdl);
+[SummaryTable, ~, ~, ~] =computeConvergence(EstMdl);
+disp(SummaryTable);
 % Simulate posterior draws for coefficient analysis
 rng(seed);
 [BetaSim, sigma2Sim, RegimeSim] = simulate(PriorMdl, xTrain_ValidNorm ...
@@ -262,6 +269,16 @@ ylabel('Roundness Indicator [$\mu$m]', 'FontSize',17,'Interpreter','latex');
 title('Bayesian Mix Conj SSVS','FontSize', 16,'Interpreter', 'latex');
 axis tight;
 set(gca,'FontSize',17,'LineWidth',1.2,'TickDir','out','Box','off');
+%% GPR Model with results 
+if isequal(FlagforParamterIdentification,'on')
+else
+    KernelParamters=0; Sigma=0;
+end 
+KernalName=  'matern32';
+results = trainGPRModel( ...
+    xTrain_Valid, yTrain_Valid, ...
+    xTest, yTest, ...
+    PP_train, KernalName, seed, FlagforParamterIdentification,KernelParamters,Sigma);
 %% 6. Minimal Models: CorrCutOff Sensitivity Analysis
 fprintf('Running: Identification for Minimal Models...\n');
 CorrGrid = [0.05:0.1:0.95 1];         % grid of correlation cutoffs
@@ -478,7 +495,6 @@ hold off;
 % Heatmap of RMSE across CorrCutOff and PIP thresholds
 %% ============================================================
 figure('Color', 'w','Units','inches','Position',[1 1 6 5]);
-
 % Heatmap of validation RMSE
 imagesc(PIP_Grid, CorrGrid, RMSE_test_PIP(1:end-1,:));  % exclude CorrCutOff=1 for clarity
 colormap(parula); % suitable for publication
@@ -584,9 +600,12 @@ CI_95 = [CI_lower, CI_upper];
 PredictorNames = ['Intercept'; SignalNames{CorrminIdx}];
 CI_Table = table(PredictorNames, beta_opt, SE_beta, CI_lower, CI_upper, ...
     'VariableNames', {'Predictor','Beta','StdError','CI_Lower','CI_Upper'});
+fprintf('Features Contribution from the Ridge Regression\n');
+disp(CI_Table);
 elapsedTime = toc;   % stop timer and get time (seconds)
 disp(elapsedTime)
 %% ============================================================
+fprintf('Running: Data Efficiency Analysis (i.e., Learning Curve)...\n');
 % Learning Curve
 rng(seed)
 K= 10;

@@ -13,13 +13,12 @@
 %% 1. Environment Setup
 clc; clear; close all;
 seed = 1;
-rng(seed, 'twister');
 % Add utils folder to path for helper functions (findBestLambda, etc.)
 if isfolder('utils')
     addpath(genpath('utils'));
 end
 % Global Settings
-FlagforParamterIdentification = 0; % Set to 1 to run hyperparameter optimization
+FlagforParamterIdentification = 'off'; % Set to 1 to run hyperparameter optimization
 epsilon = 2.8;                     % Threshold for hybrid error calculation
 %% 2. Load Dataset
 % Using relative pathing so it works on any machine
@@ -31,6 +30,7 @@ end
 load(data_path);
 %% 3. Data Preprocessing & Leakage Prevention
 tic
+rng(seed, 'twister');
 % Hold-out 14% for testing
 cv1 = cvpartition(size(x,1), 'HoldOut', 0.14);
 InittrainIdx = training(cv1);
@@ -61,7 +61,7 @@ p = size(xTestNorm,2);
 fprintf('Running: Bayesian Lasso Model...\n');
 if isequal(FlagforParamterIdentification,'on')
     K=5;
-    bestlambda = findBestLambda(x, y, InittrainIdx, testIdx, ProcessParameters, K, seed);
+    bestlambda = findBestLambda(xTrain_Valid, yTrain_Valid, InittrainIdx, testIdx, ProcessParameters, K, seed);
 end
 % Define Bayesian Lasso prior
 PriorMdlLasso = bayeslm(p, 'ModelType', 'Lasso', 'VarNames', FeatureNames);
@@ -194,11 +194,16 @@ legend([h(1), h(2)], {'Data', 'Normal'}, 'FontSize', 17, 'Location', 'best');
 title('Bayesian LASSO','FontSize', 16,'Interpreter', 'latex');
 set(gca, 'FontSize', 17, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 %% 5. Bayesian Conjugate Model (MixConjugate)
+tic;
 fprintf('Running: Bayesian Mix Conjugate SSVS Model...\n');
 % Hyperparameter optimization for V1, V2
 if isequal(FlagforParamterIdentification,'on')
-    [bestV1, bestV2] = findBestV1V2(x, y, InittrainIdx, ProcessParameters, logspace(-7, -2, 12), logspace(1, 1.7, 12), K, seed);
+    bestV1 =0; bestV2 = 0;
+    K=5;
+    [bestV1, bestV2] = findBestV1V2(xTrain_Valid, yTrain_Valid, InittrainIdx, ProcessParameters, logspace(-7, -2, 12), logspace(1, 1.5, 12), K, seed);
 end
+conjelapsedTime = toc;   % stop timer and get time (seconds)
+disp(conjelapsedTime)
 % Define prior model
 V = [bestV1*ones(p+1,1), bestV2*ones(p+1,1)];
 PriorMdl = bayeslm(p,'ModelType','MixConjugate','V',V,'VarNames',FeatureNames);
@@ -264,6 +269,21 @@ ylabel('Roundness Indicator [$\mu$m]', 'FontSize',17,'Interpreter','latex');
 title('Bayesian Mix Conj SSVS','FontSize', 16,'Interpreter', 'latex');
 axis tight;
 set(gca,'FontSize',17,'LineWidth',1.2,'TickDir','out','Box','off');
+%% GPR Model with results
+if isequal(FlagforParamterIdentification,'on')
+    KernelParamters=0; Sigma=0;
+    KernalName=  'matern32';
+    results = trainGPRModel( ...
+        xTrain_Valid, yTrain_Valid, ...
+        xTest, yTest, ...
+        PP_train, KernalName, seed, FlagforParamterIdentification,KernelParamters,Sigma);
+else
+    KernalName=  'matern32';
+    results = trainGPRModel( ...
+        xTrain_Valid, yTrain_Valid, ...
+        xTest, yTest, ...
+        PP_train, KernalName, seed, FlagforParamterIdentification,KernelParamters,Sigma);
+end
 %% 6. Minimal Models: CorrCutOff Sensitivity Analysis
 fprintf('Running: Identification for Minimal Models...\n');
 CorrGrid = [0.05:0.1:0.95 1];         % grid of correlation cutoffs
