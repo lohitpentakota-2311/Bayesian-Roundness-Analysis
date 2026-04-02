@@ -155,4 +155,4 @@ CC BY-NC-ND
 
 ## 📚 Citation
 
-Pentakota, L. K., Leonesio, M.*, Papananias, M., & Bianchi, G., Matlab implementation: Monitoring Centreless Grinding Processes for Workpiece Roundness Prediction Using Internal Machine Sensors and Bayesian Sparse Regression Models, Version 1, GitHub, 2026. https://github.com/...
+Pentakota, L. K., Leonesio, M.*, Papananias, M., & Bianchi, G., Matlab implementation: Monitoring Centreless Grinding Processes for Workpiece Roundness Prediction Using Internal Machine Sensors and Bayesian Sparse Regression Models, Version 1, GitHub, 2026. https://github.com/lohitpentakota-2311/Bayesian-Roundness-Analysis
