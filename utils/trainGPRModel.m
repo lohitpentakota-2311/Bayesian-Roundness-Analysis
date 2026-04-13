@@ -63,8 +63,8 @@ epsilon = 2.8;
 rmse_train = rmse(yPredTrain, yTrain_Valid);
 rmse_test  = rmse(ypredtest, yTest);
 
-custom_train = computeMEHEError(yTrain_Valid, yPredTrain, epsilon);
-custom_test  = computeMEHEError(yTest, ypredtest, epsilon);
+custom_train = computeHybridrror(yTrain_Valid, yPredTrain, epsilon);
+custom_test  = computeHybridrror(yTest, ypredtest, epsilon);
 
 %% =======================
 %% TRAINING PLOT
