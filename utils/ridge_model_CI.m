@@ -1,7 +1,7 @@
 function [beta, lambda_opt, y_pred_test,y_pred_train, rmse_test,rmse_train, ...
     Cov_beta, VarBeta, sigma2, df, ...
-    pred_CI_mean, pred_CI_pred, RMSE_folds, trainRMSE_folds] = ...
-    ridge_model_CI(Xtrain, ytrain, Xtest, ytest, lambda_grid, K, PP_train, seed)
+    pred_CI_mean, pred_CI_pred, RMSE_folds, trainRMSE_folds, beta_grid, stability] = ...
+    ridge_model_CI(Xtrain, ytrain, Xtest, ytest, lambda_grid, K, PP_train, seed, OptimalLambda)
 % RIDGE_MODEL_CI
 % -------------------------------------------------------------------------
 % Performs ridge regression with cross-validated lambda, computes predictions,
@@ -35,11 +35,24 @@ function [beta, lambda_opt, y_pred_test,y_pred_train, rmse_test,rmse_train, ...
 % -------------------------------------------------------------------------
 n = size(Xtrain,1);
 n_test = size(Xtest,1);
-%% ---- Step 1: Select lambda via cross-validation ----
-DataOut = find_lambda_cv(Xtrain, ytrain, K, PP_train, lambda_grid, seed);
-lambda_opt = DataOut.lambda_opt;
-RMSE_folds = DataOut.rmse_folds_all;
-trainRMSE_folds = DataOut.rmse_train_all;
+
+% ---- Step 1: select lambda via CV ----
+if isempty(OptimalLambda)
+    DataOut = find_lambda_cv(Xtrain, ytrain, K, PP_train, lambda_grid, seed);
+
+    lambda_opt = DataOut.lambda_opt;
+
+    RMSE_folds = DataOut.rmse_folds_all;
+
+    trainRMSE_folds = DataOut.rmse_train_all;
+else
+    lambda_opt= OptimalLambda; RMSE_folds = []; trainRMSE_folds = [];
+end
+% %% ---- Step 1: Select lambda via cross-validation ----
+% DataOut = find_lambda_cv(Xtrain, ytrain, K, PP_train, lambda_grid, seed);
+% lambda_opt = DataOut.lambda_opt;
+% RMSE_folds = DataOut.rmse_folds_all;
+% trainRMSE_folds = DataOut.rmse_train_all;
 %% ---- Step 2: Normalize predictors ----
 [Xtrain_norm, mu, sigma] = normalize(Xtrain,1);
 Xtrain_norm = [ones(n,1) Xtrain_norm];  % Add intercept
@@ -53,6 +66,25 @@ XtX = Xtrain_norm' * Xtrain_norm;
 XtX_reg = XtX + lambda_opt * I;
 XtX_inv = inv(XtX_reg);
 beta = XtX_inv * Xtrain_norm' * ytrain;
+%%
+% ---------------- Step 3b: Coefficients across lambda grid (stability check) ----------------
+num_lambda = length(lambda_grid);
+
+beta_grid = zeros(p, num_lambda);
+
+for i = 1:num_lambda
+
+    lambda = lambda_grid(i);
+
+    XtX_reg_tmp = XtX + lambda * I;
+
+    XtX_inv_tmp = inv(XtX_reg_tmp);
+
+    beta_grid(:,i) = XtX_inv_tmp * Xtrain_norm' * ytrain;
+end
+
+% Compute stability metric (ignore intercept)
+stability = mean(abs(beta_grid(2:end,:)), 2) ./ max(abs(beta_grid(2:end,:)), [], 2);
 %% ---- Step 4: Predictions ----
 y_pred_train = Xtrain_norm * beta;
 y_pred_test  = Xtest_norm * beta;

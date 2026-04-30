@@ -20,7 +20,10 @@ end
 % Global Settings
 FlagforParamterIdentification = 'off'; % Set to 1 to run hyperparameter optimization
 epsilon = 2.8;                     % Threshold for hybrid error calculation
-%% 2. Load Dataset
+% % Physics Based Feature Engineering Modelling flags
+DOC=0;
+NTurns= 0;
+% 2. Load Dataset
 % Using relative pathing so it works on any machine
 data_path = fullfile('data', 'InputData.mat');
 if ~exist(data_path, 'file')
@@ -28,7 +31,7 @@ if ~exist(data_path, 'file')
         '\nPlease ensure InputData.mat is in the /data/ folder.']);
 end
 load(data_path);
-%% 3. Data Preprocessing & Leakage Prevention
+% 3. Data Preprocessing & Leakage Prevention
 tic
 rng(seed, 'twister');
 % Hold-out 14% for testing
@@ -36,9 +39,29 @@ cv1 = cvpartition(size(x,1), 'HoldOut', 0.14);
 InittrainIdx = training(cv1);
 testIdx      = test(cv1);
 
-% Prevent Data Leakage: Identify repeated rows in process parameters
-ProcessParameters = x(:, end-3:end);
-isLeaking = ismember(ProcessParameters(testIdx,:), ProcessParameters(InittrainIdx,:), 'rows');
+% % this block also manage the section 5.7.1 (Physics Based Feature
+% Engineering)
+if isequal(DOC,1)
+    ProcessParameters = x(:, end-3:end);
+    FP= (ProcessParameters(:,end-1))./(ProcessParameters(:,end));
+    x= [x,FP];
+    ProcessParameters = x(:, end-4:end);
+    isLeaking = ismember(ProcessParameters(testIdx,:), ProcessParameters(InittrainIdx,:), 'rows');
+    FeatureNames= [FeatureNames,'DOC'];
+elseif isequal(NTurns,1)
+    ProcessParameters = x(:, end-3:end);
+    DurProcess= ProcessParameters(:,2)./ProcessParameters(:,3);
+    Dw = 12; Dcw = 355;
+    Nturns= exp(DurProcess.*ProcessParameters(:,4)/60*Dcw/Dw);
+    x= [x,Nturns];
+    ProcessParameters = x(:, end-4:end);
+    isLeaking = ismember(ProcessParameters(testIdx,:), ProcessParameters(InittrainIdx,:), 'rows');
+    FeatureNames= [FeatureNames,'NTurns'];
+else
+    % Prevent Data Leakage: Identify repeated rows in process parameters
+    ProcessParameters = x(:, end-3:end);
+    isLeaking = ismember(ProcessParameters(testIdx,:), ProcessParameters(InittrainIdx,:), 'rows');
+end
 
 % Move leaking samples from test -> train
 testGlobalIDs    = find(testIdx);
@@ -150,6 +173,7 @@ axis tight;
 set(gca,'FontSize',17,'LineWidth',1.2,'TickDir','out','Box','off');
 
 % 7. Testing Prediction with Error Bars
+% % %
 figure('Color','w','Position',[10 10 850 550]);
 x1 = (1:length(ypredTestLasso))';
 err_test = norminv(0.975) * sqrt(diag(YFCovTestLasso)); % 95% CI
@@ -167,6 +191,13 @@ ylabel('Roundness Indicator [$\mu$m]', 'FontSize',17,'Interpreter','latex');
 title('Bayesian LASSO','FontSize', 16,'Interpreter', 'latex');
 axis tight;
 set(gca,'FontSize',17,'LineWidth',1.2,'TickDir','out','Box','off');
+
+% % Coverage
+Test_lowerbndcil = ypredTestLasso - norminv(0.975)*sqrt(diag(YFCovTestLasso));
+Test_upperbndcil = ypredTestLasso + norminv(0.975)*sqrt(diag(YFCovTestLasso));
+inside = (yTest >= Test_lowerbndcil) & (yTest <= Test_upperbndcil);
+coverage = mean(inside) * 100;
+fprintf('Empirical coverage by Bayesian LASSO: %.2f%%\n', coverage);
 
 %% 4d. Residuals Analysis (Training & Testing)
 Trainresiduals = (yTrain_Valid - yPredTrainLasso);
@@ -246,16 +277,16 @@ legend({...
     ['$\mathrm{Hybrid Error}: ', num2str(round(custom_error_test,3)*100, '%.3f'), '\%$, ','$\mathrm{RMSE}: ', num2str(rmse_test, '%.3f'), '\,\mu m$'],'Diagonal Reference Line'}, ...
     'FontSize', 16, 'Location', 'best', 'Interpreter', 'latex');
 title('Bayesian Mix Conj SSVS','FontSize', 16,'Interpreter', 'latex');
-lims = [0, ceil(max([ypredTestLasso;yTest]))];
+lims = [0, ceil(max([ypredtest;yTest]))];
 xlim(lims); ylim(lims);
 yticks_auto = get(gca, 'YTick'); xticks(yticks_auto);
 set(gca, 'FontSize', 17, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 
 % Testing Prediction with Error Bars
 figure('Color','w','Position',[10 10 850 550]);
-x1 = (1:length(ypredTestLasso))';
-err_test = norminv(0.975) * sqrt(diag(YFCovTestLasso)); % 95% CI
-errorbar(x1, ypredTestLasso, err_test, 'o', ...
+x1 = (1:length(ypredtest))';
+err_test = norminv(0.975) * sqrt(diag(YFCovTest)); % 95% CI
+errorbar(x1, ypredtest, err_test, 'o', ...
     'Color','k', ...
     'MarkerEdgeColor', [0 0.5 0], ...
     'MarkerFaceColor', [0 0.8 0], ...
@@ -269,6 +300,12 @@ ylabel('Roundness Indicator [$\mu$m]', 'FontSize',17,'Interpreter','latex');
 title('Bayesian Mix Conj SSVS','FontSize', 16,'Interpreter', 'latex');
 axis tight;
 set(gca,'FontSize',17,'LineWidth',1.2,'TickDir','out','Box','off');
+
+Test_lowerbndcil = ypredtest - norminv(0.975)*sqrt(diag(YFCovTest));
+Test_upperbndcil = ypredtest + norminv(0.975)*sqrt(diag(YFCovTest));
+inside = (yTest >= Test_lowerbndcil) & (yTest <= Test_upperbndcil);
+coverage = mean(inside) * 100;
+fprintf('Empirical coverage by Bayesian Mix-Conjugate: %.2f%%\n', coverage)
 %% GPR Model with results
 if isequal(FlagforParamterIdentification,'on')
     KernelParamters=0; Sigma=0;
@@ -284,6 +321,10 @@ else
         xTest, yTest, ...
         PP_train, KernalName, seed, FlagforParamterIdentification,KernelParamters,Sigma);
 end
+% % Coverage
+inside = (yTest >= results.test.ci(:,1)) & (yTest <= results.test.ci(:,2));
+coverage = mean(inside) * 100;
+fprintf('Empirical coverage by GPR: %.2f%%\n', coverage);
 %% 6. Minimal Models: CorrCutOff Sensitivity Analysis
 fprintf('Running: Identification for Minimal Models...\n');
 CorrGrid = [0.05:0.1:0.95 1];         % grid of correlation cutoffs
@@ -324,6 +365,8 @@ nPIP = length(PIP_Grid);
 RMSE_test_PIP  = nan(nGrid,nPIP);
 RMSE_train_PIP = nan(nGrid,nPIP);
 NumFeatures_PIP = nan(nGrid,nPIP);
+CumRMSE_folds_allPIP= cell(nGrid,nPIP);
+CumtrainRMSE_folds_allPIP= cell(nGrid,nPIP);
 % ============================================================
 % Main Loop: iterate over correlation thresholds
 % ============================================================
@@ -392,9 +435,9 @@ for g = 1:nGrid
             temp_indices = T_sorted.TopPredictorID(T_sorted.("PIP Model") > current_PIP);
             if isempty(temp_indices), continue; end
             % Mini cross-validation to evaluate this subset
-            [~, lambda_optPIP, ~, ~, ~,~,~,~,~,~,~,~,RMSE_folds_allPIP, trainRMSE_folds_allPIP] = ...
+            [~, lambda_optPIP, ~, ~, ~,~,~,~,~,~,~,~,RMSE_folds_allPIP, trainRMSE_folds_allPIP,~,~] = ...
                 ridge_model_CI(xTrain_Valid(:, temp_indices), yTrain_Valid, ...
-                xTest(:, temp_indices),yTest, lambda_grid, 5, PP_train, seed);
+                xTest(:, temp_indices),yTest, lambda_grid, 5, PP_train, seed, []);
             % Select lambda minimizing mean RMSE across folds
             [~, bestLambdaIdxPIP] = min(mean(RMSE_folds_allPIP, 2));
             rmse_test_temp  = mean(RMSE_folds_allPIP(bestLambdaIdxPIP, :));
@@ -403,6 +446,8 @@ for g = 1:nGrid
             RMSE_test_PIP(g,p)  = rmse_test_temp;
             RMSE_train_PIP(g,p) = rmse_train_temp;
             NumFeatures_PIP(g,p) = length(temp_indices);
+            CumRMSE_folds_allPIP{g,p}= RMSE_folds_allPIP;
+            CumtrainRMSE_folds_allPIP{g,p}= trainRMSE_folds_allPIP;
             if rmse_test_temp < best_RMSE_PIP
                 best_RMSE_PIP = rmse_test_temp;
                 best_indices_for_g = temp_indices;
@@ -418,8 +463,8 @@ for g = 1:nGrid
     Xtest  = xTest(:,  IdsRep{g});
     [beta, lambda_opt, y_pred_test, y_pred_train, rmse_test, rmse_train, ...
         Cov_beta, VarBeta, sigma2, df, ...
-        pred_CI_mean, pred_CI_pred, RMSE_folds_all, trainRMSE_folds_all] = ...
-        ridge_model_CI(Xtrain, yTrain_Valid, Xtest,yTest, lambda_grid, K, PP_train, seed);
+        pred_CI_mean, pred_CI_pred, RMSE_folds_all, trainRMSE_folds_all,~,~] = ...
+        ridge_model_CI(Xtrain, yTrain_Valid, Xtest,yTest, lambda_grid, K, PP_train, seed, []);
     % Store results
     Cumbeta{g} = beta;
     CumRMSE_folds_all{g} = RMSE_folds_all;
@@ -516,7 +561,11 @@ ValidRMSE = RMSE_test_PIP(1:end-1,:);
 hold on;
 plot(PIP_Grid(bestCol), CorrGrid(bestRow), 'rp', 'MarkerSize',12, ...
     'MarkerFaceColor','r','DisplayName','Optimal Point');
-legend('Location','northeast','FontSize',10);
+hold on;
+plot(PIP_Grid(1), CorrGrid(10), 'rp', 'MarkerSize', 20, ...
+    'MarkerFaceColor', 'g', 'DisplayName', 'Example Point for $\lambda$ Effect');
+legend('Location', 'northeast' ,'Interpreter','latex','FontSize', 20);
+% 7. Aesthetics
 grid off;
 %% ============================================================
 % Predicted vs Measured Plot with RMSE and Custom Error
@@ -564,6 +613,27 @@ xlabel('$\lambda$ (Ridge regularization)','Interpreter','latex','FontSize',17);
 ylabel('$\mathrm{RMSE}$','Interpreter','latex','FontSize',17);
 legend('Interpreter','latex','Location','best','FontSize',17);
 box on;
+%% %% ============================================================
+figure('Color','w'); hold on;
+valRMSE   = CumRMSE_folds_allPIP{CorrminIdx+1,1};
+trainRMSE = CumtrainRMSE_folds_all{CorrminIdx+1,1};
+meanVal = mean(valRMSE,2);
+semVal  = std(valRMSE,0,2) ./ sqrt(size(valRMSE,2));
+meanTrain = mean(trainRMSE,2);
+% Optimal lambda
+[~, idxMin] = min(meanVal);
+lambda_min = lambda_grid(idxMin);
+% Plot validation and training curves
+errorbar(lambda_grid, meanVal, semVal, '-o','LineWidth',1.8,'MarkerSize',6,'CapSize',8,...
+    'DisplayName','$\mathrm{Validation\ RMSE}$');
+plot(lambda_grid, meanTrain, '-s','LineWidth',1.8,'MarkerSize',6,'DisplayName','$\mathrm{Training\ RMSE}$');
+xline(lambda_min,'--k','LineWidth',1.6,'DisplayName','$\lambda_{\min}$','Interpreter','latex');
+set(gca,'XScale','log','XDir','reverse','FontSize',12,'LineWidth',1.2,'TickLabelInterpreter','latex');
+title('Effect of Ridge Regularization','Interpreter','latex','FontSize',17)
+xlabel('$\lambda$ (Ridge regularization)','Interpreter','latex','FontSize',17);
+ylabel('$\mathrm{RMSE}$','Interpreter','latex','FontSize',17);
+legend('Interpreter','latex','Location','best','FontSize',17);
+box on;
 %% ============================================================
 % Prediction Intervals for Ridge Model
 %% ============================================================
@@ -585,9 +655,13 @@ xlabel('Post-Inspection Measurements','FontSize',17,'Interpreter','latex');
 ylabel('Roundness Indicator [$\mu$m]','FontSize',17,'Interpreter','latex');
 axis tight;
 set(gca,'FontSize',17,'LineWidth',1.2,'TickDir','out','Box','off');
+% coverage
 CI_width_minimal = y_pred_upper - y_pred_lower;  % Full CI width
 mean_CI_minimal = mean(CI_width_minimal);
 median_CI_minimal = median(CI_width_minimal);
+inside = (yTest >= y_pred_lower) & (yTest <= y_pred_upper);
+coverage = mean(inside) * 100;
+fprintf('Empirical coverage by Minimal Model: %.2f%%\n', coverage);
 %% ============================================================
 % Beta Coefficients with 95% Confidence Intervals
 %% ============================================================
@@ -609,6 +683,92 @@ fprintf('Features Contribution from the Ridge Regression\n');
 disp(CI_Table);
 elapsedTime = toc;   % stop timer and get time (seconds)
 disp(elapsedTime)
+%% %% Cluster Contribution to the Prediction Variance
+ClusterIndices=cumclusterCell{CorrminIdx};
+clusterCell= ClusterIndices;
+Sigma_beta= summary.Covariances(1:end-1,1:end-1);
+% % % eigen vectors and values
+[Q,Lambda] = eig(Sigma_beta);
+Lambda=diag(Lambda);
+clusters_to_use = CumT_sorted{CorrminIdx}.clusterID(CumT_sorted{CorrminIdx}.("PIP Model") > StoreBestPIP(CorrminIdx));
+highlightIDs = [1, 14, 10, 48, 35, 31, 82];
+% % initialize
+frac_y_cluster_vec = zeros(1, numel(clusters_to_use));
+% % % Including intercept due to the sigmabeta (co-varinace matrix given by
+% the model)
+X_design = [ones(size(xTest,1),1), xTest]; % with intercept if needed
+% --- Compute only for the chosen clusters ---
+for ii = 1:numel(clusters_to_use)
+    k = clusters_to_use(ii);
+    C = clusterCell{k};
+    C_rows = C+1; % adjust for intercept
+    % % cluster contributions
+    w = sum(Q(C_rows,:).^2, 1); %
+    % % % normalizing
+    frac_y_cluster_vec(ii) = sum(w .* Lambda')/sum(Lambda');
+end
+sum(frac_y_cluster_vec)
+% sum(Lambda')
+
+% --- Sort the selected clusters ---
+[frac_sorted, idx_sorted] = sort(frac_y_cluster_vec, 'descend');
+clusters_sorted = clusters_to_use(idx_sorted);
+
+% %  assign for colours
+barColors = repmat([0.2 0.4 0.9], numel(clusters_sorted), 1); % default teal color
+for i = 1:numel(clusters_sorted)
+    if ismember(clusters_sorted(i), highlightIDs)
+        barColors(i,:) = [0.9 0.2 0.5]; % dark pink for highlighted clusters
+    end
+end
+% --- Prepare figure ---
+figure('Visible','on','Color','w', 'Position', [100 100 1100 600]); % white background
+% yyaxis left
+% --- Bar plot ---
+b = bar(frac_sorted*100, 'FaceColor', 'flat', 'EdgeColor', 'k', 'LineWidth', 1.2);
+b.CData = barColors;
+hold on;
+% --- Axes formatting ---
+ax = gca;
+ax.FontName = 'Times New Roman';
+ax.FontSize = 12;
+ax.LineWidth = 1;
+ax.Box = 'off';
+h = xlabel('Cluster ID', 'FontSize', 20, 'Interpreter', 'latex');
+h.Units = 'normalized';
+h.Position(2) = -0.06;  % moves it down relative to axis
+ylabel('Cluster contribution to $\hat{y}$ variance ($\%$)', 'FontSize', 20, 'Interpreter', 'latex');
+% --- Grid lines for readability ---
+% grid on;
+ax.YGrid = 'on';
+ax.XGrid = 'off';
+% --- Optional: annotate values on top of bars ---
+for i = 1:numel(frac_sorted)
+    text(i, frac_sorted(i)*100 + 1, sprintf('%.1f', frac_sorted(i)*100), ...
+        'HorizontalAlignment','center', 'FontSize',22, 'FontName','Times New Roman');
+end
+% % --- Add cumulative sum on right y-axis ---
+frac_cumsum = cumsum(frac_sorted);
+yyaxis right
+plot(1:numel(frac_cumsum), frac_cumsum*100, '-o', 'Color', [0.85 0.33 0.1], ...
+    'LineWidth', 2, 'MarkerSize', 6);
+ylabel('Cumulative fraction (\%)', 'FontSize', 20, 'Interpreter', 'latex');
+ylim([0 100]);
+% --- Colored x-axis labels matching bar colors ---
+xticks(1:numel(clusters_sorted));
+ax.XTickLabel = []; % hide original labels
+for i = 1:numel(clusters_sorted)
+    if ismember(clusters_sorted(i), highlightIDs)
+        clr = [0.9 0.2 0.5]; % dark pink
+    else
+        clr = [0.2 0.4 0.9]; % teal
+    end
+    text(i, -max(frac_sorted)*0.05*100, num2str(clusters_sorted(i)), ...
+        'HorizontalAlignment','center', 'VerticalAlignment','top', ...
+        'Color', clr, 'FontSize',22, 'FontName','Times New Roman', ...
+        'Rotation',45);
+end
+set(gca, 'FontSize', 20, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 %% ============================================================
 fprintf('Running: Data Efficiency Analysis (i.e., Learning Curve)...\n');
 % Learning Curve
