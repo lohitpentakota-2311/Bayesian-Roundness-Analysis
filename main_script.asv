@@ -856,20 +856,9 @@ plot(nSamples(idx_best), lc_valid(idx_best), 'ks', ...
     'MarkerSize',10,'LineWidth',2)
 xlabel('Number of Training Samples', 'Interpreter','latex', 'FontSize',17)
 ylabel('RMSE', 'Interpreter','latex', 'FontSize',17)
-title('Learning Curve', 'Interpreter','latex', 'FontSize',17);
-% ---- 1-SE rule point ----
-[min_val, idx_min] = min(lc_valid);
-threshold_1se = min_val + lc_valid_std(idx_min);
-
-idx_1se = find(lc_valid <= threshold_1se, 1, 'first');
-
-plot(nSamples(idx_1se), lc_valid(idx_1se), 'md', ...
-    'MarkerSize',10,'LineWidth',2);
+title('Learning Curve', 'Interpreter','latex', 'FontSize',17)
 legend('Training','Validation', ...
-    'Final Model','Best Validation','1-SE Model', ...
-    'Location','best', 'Interpreter','latex','FontSize',17)
-% legend('Training','Validation', ...
-%     'Final Model','Best Validation','Location','best', 'Interpreter','latex', 'FontSize',17)
+    'Final Model','Best Validation','Location','best', 'Interpreter','latex', 'FontSize',17)
 xlim([0 max(nSamples)])
 set(gca, 'FontSize', 17, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %
