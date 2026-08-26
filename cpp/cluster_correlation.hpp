@@ -5,18 +5,18 @@
 #include <string>
 #include <vector>
 
-struct ClusterCorrelationResult
-{
+struct ClusterResult {
     std::vector<std::vector<int>> clusterIndices;
     std::vector<std::vector<std::string>> clusterLabels;
-    Eigen::MatrixXd reorderedCorrelationMatrix;
+    Eigen::MatrixXd reorderedCorrMatrix;
     std::vector<std::string> reorderedLabels;
 };
 
-ClusterCorrelationResult clusterCorrelation(
+ClusterResult clusterCorrelation(
     const Eigen::MatrixXd& corrMatrix,
     const std::vector<std::string>& varLabels,
     double threshold
 );
 
 #endif
+

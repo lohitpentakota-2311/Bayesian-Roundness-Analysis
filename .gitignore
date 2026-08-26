@@ -1,2 +1,20 @@
+# C++ build artifacts
+*.o
+*.exe
+
+# Eigen dependency
 eigen/
+
+# Build directories
+build/
+
+# IDE files
+.vscode/
+.idea/
+
+# MATLAB temporary files
 *.asv
+
+# OS files
+.DS_Store
+Thumbs.db
